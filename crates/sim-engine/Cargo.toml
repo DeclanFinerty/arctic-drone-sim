@@ -1,0 +1,20 @@
+[package]
+name = "sim-engine"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "sim-engine"
+path = "src/main.rs"
+
+[dependencies]
+wind-field = { workspace = true }
+drone = { workspace = true }
+scenario = { workspace = true }
+anyhow = { workspace = true }
+clap = { workspace = true }
+serde = { workspace = true }
+toml = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }

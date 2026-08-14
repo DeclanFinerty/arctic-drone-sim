@@ -1,0 +1,16 @@
+[package]
+name = "wind-field"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+ndarray = { workspace = true }
+ndrustfft = { workspace = true }
+num-complex = { workspace = true }
+rand = { workspace = true }
+rand_distr = { workspace = true }
+rayon = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }

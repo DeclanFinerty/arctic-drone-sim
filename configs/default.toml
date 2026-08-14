@@ -1,0 +1,27 @@
+# Default simulation config. All quantities SI unless noted.
+
+seed = 42
+
+[wind_field]
+# Physical domain size in meters (x, y, z).
+domain = [2000.0, 2000.0, 200.0]
+# Grid resolution (nx, ny, nz).
+grid = [128, 128, 32]
+# Mean wind speed [m/s] at reference height.
+mean_speed_ms = 8.0
+reference_height_m = 10.0
+# Log-law surface roughness [m]: flat Arctic snow/ice.
+z0_m = 0.001
+
+[wind_field.mann]
+# Placeholder; fitted values will replace these once the pipeline runs.
+alpha_epsilon_23 = 0.1
+length_scale_m = 60.0
+gamma = 3.2
+
+[simulation]
+duration_s = 60.0
+dt_s = 0.01
+
+[output]
+directory = "output"

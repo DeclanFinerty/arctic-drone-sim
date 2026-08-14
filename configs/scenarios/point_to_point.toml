@@ -1,0 +1,14 @@
+# PointToPoint: fly from start to goal.
+
+[mission]
+type = "point_to_point"
+start_m = [0.0, 0.0, 30.0]
+goal_m = [500.0, 0.0, 30.0]
+tolerance_m = 2.0
+timeout_s = 300.0
+
+[controller]
+type = "pid"
+kp = [1.0, 1.0, 1.5]
+ki = [0.0, 0.0, 0.1]
+kd = [0.5, 0.5, 0.5]

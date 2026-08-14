@@ -1,0 +1,36 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/wind-field",
+    "crates/drone",
+    "crates/scenario",
+    "crates/sim-engine",
+]
+
+[workspace.package]
+edition = "2021"
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+ndarray = "0.15"
+ndrustfft = "0.4"
+nalgebra = "0.32"
+num-complex = "0.4"
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+rand = "0.8"
+rand_distr = "0.4"
+rayon = "1"
+clap = { version = "4", features = ["derive"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+thiserror = "1"
+anyhow = "1"
+
+wind-field = { path = "crates/wind-field" }
+drone = { path = "crates/drone" }
+scenario = { path = "crates/scenario" }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

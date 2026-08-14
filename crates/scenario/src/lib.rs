@@ -1,0 +1,23 @@
+pub mod controller;
+pub mod metrics;
+pub mod mission;
+
+use drone::{ControlInput, DroneState};
+
+/// A mission defines the objective and success criteria for a run.
+pub trait Mission {
+    fn is_complete(&self, state: &DroneState, time: f64) -> bool;
+    fn score(&self, history: &[DroneState]) -> f64;
+    /// Target position at a given time, if the mission has a moving/static target.
+    fn target(&self, time: f64) -> Option<[f64; 3]>;
+}
+
+/// A controller produces control inputs from state, mission context, and local wind.
+pub trait Controller {
+    fn compute_control(
+        &mut self,
+        state: &DroneState,
+        mission: &dyn Mission,
+        wind: [f64; 3],
+    ) -> ControlInput;
+}
