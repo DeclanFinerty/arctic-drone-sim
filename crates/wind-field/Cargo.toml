@@ -6,11 +6,16 @@ license.workspace = true
 
 [dependencies]
 ndarray = { workspace = true }
+ndarray-npy = { workspace = true }
 ndrustfft = { workspace = true }
 num-complex = { workspace = true }
 rand = { workspace = true }
 rand_distr = { workspace = true }
 rayon = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
+
+[dev-dependencies]
+anyhow = { workspace = true }

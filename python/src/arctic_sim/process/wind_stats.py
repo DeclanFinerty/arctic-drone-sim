@@ -7,6 +7,7 @@ wind speed in m/s, direction in degrees (0=N, clockwise, 90=E).
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -130,3 +131,78 @@ def as_utc(t: datetime | np.datetime64) -> datetime:
     if isinstance(t, np.datetime64):
         return t.astype("datetime64[s]").astype(datetime)
     return t
+
+
+IEC_I_REF = {"A+": 0.18, "A": 0.16, "B": 0.14, "C": 0.12}
+
+
+@dataclass
+class MannParams:
+    """IEC-informed Mann model parameters. Units: SI."""
+
+    alpha_epsilon_23: float  # m^(4/3) / s^2
+    length_scale_m: float
+    gamma: float
+    v_hub_ms: float
+    z_hub_m: float
+    z0_m: float
+    ti_target: float
+    sigma_u_target_ms: float
+    iec_class: str
+    notes: str
+
+
+def derive_mann_params(
+    v_measured_ms: float,
+    *,
+    z_measured_m: float = 10.0,
+    z_hub_m: float = 30.0,
+    z0_m: float = 0.001,
+    iec_class: str = "C",
+) -> MannParams:
+    """Derive IEC-informed Mann model parameters at a target hub altitude.
+
+    Steps (all per IEC 61400-1 Ed 4):
+      1. Extrapolate mean wind from the measurement height to z_hub via the
+         neutral log-law: U(z_hub) = U(z_meas) * ln(z_hub/z0) / ln(z_meas/z0).
+      2. sigma_u_target from the Normal Turbulence Model:
+             sigma_u = I_ref * (0.75 * V_hub + 5.6)
+         where I_ref depends on the IEC turbulence class (C ~= offshore/smooth).
+      3. Length scale L = 0.8 * Lambda_1  where  Lambda_1 = 0.7 * min(z_hub, 60).
+      4. Gamma = 3.9 (IEC default for neutral atmospheric turbulence).
+      5. alpha * epsilon^(2/3) initial estimate from the approximate scaling
+             sigma_u^2 ~= 3.2 * A * L^(2/3)
+         so  A ~= sigma_u^2 / (3.2 * L^(2/3)).
+
+    The amplitude estimate is approximate — refine it after the Mann model
+    is running by measuring the output sigma_u and rescaling A linearly.
+    """
+    if iec_class not in IEC_I_REF:
+        raise ValueError(f"unknown IEC class {iec_class!r}; expected one of {list(IEC_I_REF)}")
+    i_ref = IEC_I_REF[iec_class]
+
+    v_hub = v_measured_ms * math.log(z_hub_m / z0_m) / math.log(z_measured_m / z0_m)
+    sigma_u = i_ref * (0.75 * v_hub + 5.6)
+    ti = sigma_u / v_hub
+
+    lambda_1 = 0.7 * min(z_hub_m, 60.0)
+    length_scale = 0.8 * lambda_1
+    gamma = 3.9
+    ae23 = sigma_u ** 2 / (3.2 * length_scale ** (2.0 / 3.0))
+
+    return MannParams(
+        alpha_epsilon_23=ae23,
+        length_scale_m=length_scale,
+        gamma=gamma,
+        v_hub_ms=v_hub,
+        z_hub_m=z_hub_m,
+        z0_m=z0_m,
+        ti_target=ti,
+        sigma_u_target_ms=sigma_u,
+        iec_class=iec_class,
+        notes=(
+            "alpha*epsilon^(2/3) is an initial estimate; refine after running the "
+            "Mann model by measuring output sigma_u and rescaling A linearly "
+            "(A_new = A_old * (sigma_target / sigma_measured)^2)."
+        ),
+    )

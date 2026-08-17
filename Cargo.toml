@@ -13,10 +13,12 @@ license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
 ndarray = "0.15"
+ndarray-npy = "0.8"
 ndrustfft = "0.4"
 nalgebra = "0.32"
 num-complex = "0.4"
 serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 toml = "0.8"
 rand = "0.8"
 rand_distr = "0.4"
