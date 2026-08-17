@@ -113,27 +113,66 @@ def plot_combined_psd(k_obs, F_obs, k_synth, F_synth, U_mean, L, dx):
     plt.close(fig)
 
 
+def iec_envelope_samples(k_wb: float, c_wb: float, n: int, i_ref: float = 0.12,
+                          rng_seed: int = 0) -> np.ndarray:
+    """Monte Carlo sample the IEC design envelope: draw V from the observed
+    Weibull, then draw a wind speed sample from Normal(V, sigma_u(V)) with
+    sigma_u = I_ref * (0.75 V + 5.6)  (IEC NTM). This is the mixture that a
+    fast sensor would see across a year of varying atmospheric conditions."""
+    from scipy import stats as scistats
+    rng = np.random.default_rng(rng_seed)
+    v = scistats.weibull_min.rvs(k_wb, loc=0.0, scale=c_wb, size=n, random_state=rng)
+    sigma_u = i_ref * (0.75 * v + 5.6)
+    u = rng.normal(loc=v, scale=sigma_u)
+    return np.clip(u, 0.0, None)
+
+
 def plot_distributions(obs_speeds: np.ndarray, synth_u: np.ndarray, k_wb: float, c_wb: float):
     from scipy import stats as scistats
 
-    fig, ax = plt.subplots(figsize=(10, 5.5))
-    bins = np.linspace(0, 20, 50)
+    # ECCC records wind speed in whole km/h, i.e. discrete 1/3.6 m/s steps.
+    # Aligning bin edges with the km/h quantum removes the alternating tall/short
+    # aliasing artifact seen with arbitrary bin widths.
+    kmh_max = 80
+    edges_kmh = np.arange(0, kmh_max + 1, 2)  # 2 km/h bins ≈ 0.556 m/s
+    bins = edges_kmh / 3.6
 
+    envelope = iec_envelope_samples(k_wb, c_wb, n=500_000)
+
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5.5))
+
+    # Panel 1: observed vs raw synthetic
+    ax = axes[0]
     ax.hist(obs_speeds, bins=bins, density=True, alpha=0.55, color="#d62728",
-            edgecolor="white", linewidth=0.3, label="Observed 2024 (all hours)")
+            edgecolor="white", linewidth=0.3, label="Observed 2024 (hourly)")
     ax.hist(synth_u.flatten(), bins=bins, density=True, alpha=0.55, color="#1f6feb",
             edgecolor="white", linewidth=0.3,
-            label=f"Synthetic Mann (single snapshot, U_mean={synth_u.mean():.2f} m/s)")
-
+            label=f"Synthetic Mann single snapshot (V_hub={synth_u.mean():.2f} m/s)")
     x = np.linspace(0.01, 20, 500)
     ax.plot(x, scistats.weibull_min.pdf(x, k_wb, loc=0.0, scale=c_wb),
             color="#8b0000", linewidth=1.5, label=f"Weibull fit  k={k_wb:.2f}, c={c_wb:.2f}")
-
     ax.set_xlabel("Wind speed [m/s]")
     ax.set_ylabel("Probability density")
-    ax.set_title("Wind speed distribution — observed (all hours, all weather) vs synthetic (fixed IEC condition)")
-    ax.legend()
+    ax.set_title("Raw: observed climatology vs single-condition Mann")
+    ax.legend(fontsize=8)
     ax.grid(alpha=0.3)
+
+    # Panel 2: observed vs IEC design envelope (V ~ Weibull + IEC turbulence)
+    ax = axes[1]
+    ax.hist(obs_speeds, bins=bins, density=True, alpha=0.55, color="#d62728",
+            edgecolor="white", linewidth=0.3, label="Observed 2024 (hourly)")
+    ax.hist(envelope, bins=bins, density=True, alpha=0.55, color="#2ca02c",
+            edgecolor="white", linewidth=0.3,
+            label="IEC design envelope: Weibull V + IEC NTM turbulence")
+    ax.plot(x, scistats.weibull_min.pdf(x, k_wb, loc=0.0, scale=c_wb),
+            color="#8b0000", linewidth=1.5, label=f"Weibull fit  k={k_wb:.2f}, c={c_wb:.2f}")
+    ax.set_xlabel("Wind speed [m/s]")
+    ax.set_ylabel("Probability density")
+    ax.set_title("Combined: observed vs mixture over the Weibull-sampled year")
+    ax.legend(fontsize=8)
+    ax.grid(alpha=0.3)
+
+    fig.suptitle("Wind speed distribution comparisons", fontsize=12)
     fig.tight_layout()
     fig.savefig(PLOTS / "distributions.png", dpi=150)
     plt.close(fig)
