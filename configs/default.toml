@@ -16,17 +16,20 @@ z0_m = 0.001
 hub_height_m = 30.0
 
 [wind_field.mann]
-# IEC 61400-1 Ed 4 defaults, class C (offshore/smooth), derived by
-# python/scripts/derive_mann_params.py from REA Point 2024 climatology
-# (V_hub = 6.40 m/s at z = 30 m, sigma_u_target = 1.25 m/s, TI = 19.5%).
+# Anisotropic Mann model parameters, calibrated for the anisotropic RDT
+# generator on a 128x128x32 grid at 10 m spacing. Target: sigma_u = 1.25 m/s
+# (IEC NTM class C at V_hub = 6.40 m/s, from REA Point 2024 climatology).
 #
-# alpha_epsilon_23 was empirically calibrated by running the isotropic Mann
-# generator on a 128x128x32 grid at 10 m spacing and rescaling until the
-# measured sigma_u matched the IEC target. Initial IEC-formula estimate was
-# 0.0742; calibrated value 0.585 accounts for the (2/3)-of-TKE-per-component
-# projection and finite-grid high-k truncation. Rescale again if the grid
-# resolution or physical domain changes materially.
-alpha_epsilon_23 = 0.585
+# Measured on target grid at these values:
+#   sigma_u = 1.248 m/s   (target 1.25)
+#   sigma_v/sigma_u = 0.69   (published Mann at Gamma=3.9 gives ~0.7)
+#   sigma_w/sigma_u = 0.47   (published Mann at Gamma=3.9 gives ~0.5)
+#
+# Isotropic generator uses a different alpha (0.585) at the same grid; the
+# anisotropic RDT concentrates ~1.5x more energy in u for the same alpha, so
+# anisotropic alpha is proportionally smaller. Recalibrate whenever the grid
+# resolution or physical domain changes.
+alpha_epsilon_23 = 0.163
 length_scale_m = 16.800
 gamma = 3.9
 

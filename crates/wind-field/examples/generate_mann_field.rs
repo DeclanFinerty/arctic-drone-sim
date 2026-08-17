@@ -5,11 +5,11 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use wind_field::io::save_grid;
-use wind_field::mann::{MannConfig, generate_isotropic_field};
+use wind_field::mann::{MannConfig, generate_anisotropic_field, generate_isotropic_field};
 
 fn main() -> Result<()> {
     let cfg = MannConfig {
-        alpha_epsilon_23: 0.585,
+        alpha_epsilon_23: 0.163,
         length_scale_m: 16.8,
         gamma: 3.9,
     };
@@ -20,29 +20,50 @@ fn main() -> Result<()> {
     let mean_u_ms = 6.4;
     let seed: u64 = 20260817;
 
-    let grid = generate_isotropic_field(&cfg, origin, spacing, shape, mean_u_ms, seed);
+    // Isotropic (reference; kept for comparison with the anisotropic run).
+    let iso_cfg = MannConfig {
+        alpha_epsilon_23: 0.585,
+        ..cfg.clone()
+    };
+    let iso_grid = generate_isotropic_field(&iso_cfg, origin, spacing, shape, mean_u_ms, seed);
+    save_grid(
+        &iso_grid,
+        &PathBuf::from("output").join("wind_fields").join("mann_isotropic"),
+        format!(
+            "mann::generate_isotropic_field  A={}, L={}, mean_u={} m/s, seed={}",
+            iso_cfg.alpha_epsilon_23, iso_cfg.length_scale_m, mean_u_ms, seed
+        ),
+    )?;
+    print_stats("iso ", &iso_grid);
 
+    // Anisotropic Mann field (RDT).
+    let grid = generate_anisotropic_field(&cfg, origin, spacing, shape, mean_u_ms, seed);
     let target_dir = PathBuf::from("output")
         .join("wind_fields")
-        .join("mann_isotropic");
+        .join("mann_anisotropic");
     save_grid(
         &grid,
         &target_dir,
         format!(
-            "mann::generate_isotropic_field  A={}, L={}, mean_u={} m/s, seed={}",
-            cfg.alpha_epsilon_23, cfg.length_scale_m, mean_u_ms, seed
+            "mann::generate_anisotropic_field  A={}, L={}, Gamma={}, mean_u={} m/s, seed={}",
+            cfg.alpha_epsilon_23, cfg.length_scale_m, cfg.gamma, mean_u_ms, seed
         ),
     )?;
+    print_stats("anis", &grid);
 
-    let (mu, sigma_u) = mean_std(&grid.u);
-    let (mv, sigma_v) = mean_std(&grid.v);
-    let (mw, sigma_w) = mean_std(&grid.w);
-    println!(
-        "u: mean={:.3}, sigma={:.3}  |  v: mean={:.3}, sigma={:.3}  |  w: mean={:.3}, sigma={:.3}",
-        mu, sigma_u, mv, sigma_v, mw, sigma_w
-    );
     println!("wrote {}", target_dir.display());
     Ok(())
+}
+
+fn print_stats(label: &str, grid: &wind_field::grid::WindGrid) {
+    let (mu, sigma_u) = mean_std(&grid.u);
+    let (_, sigma_v) = mean_std(&grid.v);
+    let (_, sigma_w) = mean_std(&grid.w);
+    let ratio_v = sigma_v / sigma_u;
+    let ratio_w = sigma_w / sigma_u;
+    println!(
+        "{label}  mean_u={mu:.3}  sigma_u={sigma_u:.3}  sigma_v={sigma_v:.3}  sigma_w={sigma_w:.3}   ratios v/u={ratio_v:.2}, w/u={ratio_w:.2}"
+    );
 }
 
 fn mean_std(arr: &ndarray::Array3<f64>) -> (f64, f64) {

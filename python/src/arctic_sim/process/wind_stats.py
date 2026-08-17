@@ -135,6 +135,12 @@ def as_utc(t: datetime | np.datetime64) -> datetime:
 
 IEC_I_REF = {"A+": 0.18, "A": 0.16, "B": 0.14, "C": 0.12}
 
+# Isotropic von Karman: sigma_u^2 = (2/3) * integral(E(k) dk) = (2/3) * I * A * L^(2/3)
+# where I = (1/2) * B(5/2, 1/3) is the beta-function integral of u^4/(1+u^2)^(17/6).
+# (Anisotropic RDT enhances sigma_u by ~1.25x; recalibrate empirically per grid.)
+_ISOTROPIC_VK_INTEGRAL = 0.5 * float(math.gamma(5.0 / 2.0) * math.gamma(1.0 / 3.0) / math.gamma(17.0 / 6.0))
+_ISOTROPIC_SIGMA_FACTOR = (2.0 / 3.0) * _ISOTROPIC_VK_INTEGRAL
+
 
 @dataclass
 class MannParams:
@@ -170,12 +176,17 @@ def derive_mann_params(
          where I_ref depends on the IEC turbulence class (C ~= offshore/smooth).
       3. Length scale L = 0.8 * Lambda_1  where  Lambda_1 = 0.7 * min(z_hub, 60).
       4. Gamma = 3.9 (IEC default for neutral atmospheric turbulence).
-      5. alpha * epsilon^(2/3) initial estimate from the approximate scaling
-             sigma_u^2 ~= 3.2 * A * L^(2/3)
-         so  A ~= sigma_u^2 / (3.2 * L^(2/3)).
+      5. alpha * epsilon^(2/3) from the isotropic von Karman relation
+             sigma_u^2 = (2/3) * integral(E(k) dk) = 0.688 * A * L^(2/3)
+         so  A = sigma_u^2 / (0.688 * L^(2/3)).
 
-    The amplitude estimate is approximate — refine it after the Mann model
-    is running by measuring the output sigma_u and rescaling A linearly.
+    Notes:
+      - The 0.688 constant is exact for the infinite-grid isotropic case.
+      - A finite grid loses the high-k spectral tail above Nyquist, so the
+        empirical A on the target grid is typically 1.5-2x larger.
+      - Anisotropic RDT (Mann's Gamma) enhances sigma_u further by ~1.25x
+        relative to isotropic, so anisotropic A is smaller by ~1.5x.
+      - Always refine on the actual grid: A_new = A_old * (sigma_target / sigma_measured)^2.
     """
     if iec_class not in IEC_I_REF:
         raise ValueError(f"unknown IEC class {iec_class!r}; expected one of {list(IEC_I_REF)}")
@@ -188,7 +199,7 @@ def derive_mann_params(
     lambda_1 = 0.7 * min(z_hub_m, 60.0)
     length_scale = 0.8 * lambda_1
     gamma = 3.9
-    ae23 = sigma_u ** 2 / (3.2 * length_scale ** (2.0 / 3.0))
+    ae23 = sigma_u ** 2 / (_ISOTROPIC_SIGMA_FACTOR * length_scale ** (2.0 / 3.0))
 
     return MannParams(
         alpha_epsilon_23=ae23,
@@ -201,8 +212,8 @@ def derive_mann_params(
         sigma_u_target_ms=sigma_u,
         iec_class=iec_class,
         notes=(
-            "alpha*epsilon^(2/3) is an initial estimate; refine after running the "
-            "Mann model by measuring output sigma_u and rescaling A linearly "
-            "(A_new = A_old * (sigma_target / sigma_measured)^2)."
+            "Isotropic infinite-grid asymptote. Finite grids typically need 1.5-2x "
+            "more alpha; anisotropic RDT needs ~1.5x less. Refine on target grid: "
+            "A_new = A_old * (sigma_target / sigma_measured)^2."
         ),
     )

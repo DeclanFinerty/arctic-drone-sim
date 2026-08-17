@@ -1,17 +1,24 @@
-"""Validate the isotropic Mann turbulence field written by the Rust example
+"""Validate a Mann turbulence field written by the Rust example
 `generate_mann_field`. Produces heatmaps, 1D cuts, spectra, and a divergence
-sanity check."""
+sanity check.
+
+Usage:
+    python scripts/validate_mann_field.py              # anisotropic (default)
+    python scripts/validate_mann_field.py isotropic    # isotropic reference
+"""
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
-from scipy import signal
 
-ROOT = Path(__file__).resolve().parents[2] / "output" / "wind_fields" / "mann_isotropic"
-PLOTS = Path(__file__).resolve().parents[2] / "output" / "plots" / "mann_isotropic"
+VARIANT = sys.argv[1] if len(sys.argv) > 1 else "anisotropic"
+SUBDIR = f"mann_{VARIANT}"
+ROOT = Path(__file__).resolve().parents[2] / "output" / "wind_fields" / SUBDIR
+PLOTS = Path(__file__).resolve().parents[2] / "output" / "plots" / SUBDIR
 
 
 def load():
@@ -56,7 +63,7 @@ def plot_slices(grid) -> None:
         ax.set_title(title)
         fig.colorbar(im, ax=ax, label="m/s", fraction=0.046, pad=0.04)
 
-    fig.suptitle(f"Isotropic Mann field — horizontal slice at z = "
+    fig.suptitle(f"{VARIANT.capitalize()} Mann field — horizontal slice at z = "
                  f"{grid['origin'][2] + k * grid['spacing'][2]:.0f} m",
                  fontsize=12)
     fig.tight_layout()
