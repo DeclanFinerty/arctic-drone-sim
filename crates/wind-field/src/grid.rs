@@ -32,6 +32,23 @@ impl WindGrid {
             self.origin[2] + (nz.saturating_sub(1)) as f64 * self.spacing[2],
         ]
     }
+
+    /// Shift the per-component spatial mean by `mean_offset_ms` and scale
+    /// turbulent fluctuations about the current mean by `turbulence_scale`.
+    /// Cheap way to sweep mean wind speed and TI over a single Mann field
+    /// without re-running the FFT for each parameter point.
+    pub fn transform(mut self, mean_offset_ms: [f64; 3], turbulence_scale: f64) -> Self {
+        let mu = [
+            self.u.mean().unwrap_or(0.0),
+            self.v.mean().unwrap_or(0.0),
+            self.w.mean().unwrap_or(0.0),
+        ];
+        let s = turbulence_scale;
+        self.u.mapv_inplace(|x| mu[0] + (x - mu[0]) * s + mean_offset_ms[0]);
+        self.v.mapv_inplace(|x| mu[1] + (x - mu[1]) * s + mean_offset_ms[1]);
+        self.w.mapv_inplace(|x| mu[2] + (x - mu[2]) * s + mean_offset_ms[2]);
+        self
+    }
 }
 
 /// Sample any analytical wind field onto a fresh regular grid.

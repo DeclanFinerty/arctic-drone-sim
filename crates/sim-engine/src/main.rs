@@ -47,6 +47,14 @@ struct WindFieldConfig {
     /// frame). Taylor's frozen-turbulence hypothesis. `[0, 0, 0]` disables.
     #[serde(default = "default_advection")]
     taylor_advection_ms: [f64; 3],
+    /// Shift the loaded field's per-component mean by this vector. Enables
+    /// mean-wind sweeps over a single saved Mann field.
+    #[serde(default)]
+    mean_offset_ms: [f64; 3],
+    /// Scale turbulent fluctuations about the loaded mean. Enables TI sweeps
+    /// over a single saved Mann field. 1.0 = no change.
+    #[serde(default = "one")]
+    turbulence_scale: f64,
 }
 
 fn default_wind_field_dir() -> String {
@@ -56,6 +64,8 @@ fn default_wind_field_dir() -> String {
 fn default_advection() -> [f64; 3] {
     [6.4, 0.0, 0.0]
 }
+
+fn one() -> f64 { 1.0 }
 
 #[derive(Debug, Deserialize)]
 struct DroneConfig {
@@ -141,13 +151,19 @@ fn main() -> Result<()> {
     let base_grid = load_grid(&field_dir).with_context(|| {
         format!("loading wind field from {}", field_dir.display())
     })?;
+    let base_grid = base_grid.transform(
+        cfg.wind_field.mean_offset_ms,
+        cfg.wind_field.turbulence_scale,
+    );
     let (min_c, max_c) = base_grid.domain_bounds();
     tracing::info!(
-        "wind field {} loaded: shape {:?}, domain x=[{:.0},{:.0}] y=[{:.0},{:.0}] z=[{:.0},{:.0}]  Taylor advection {:?} m/s",
+        "wind field {} loaded: shape {:?}, domain x=[{:.0},{:.0}] y=[{:.0},{:.0}] z=[{:.0},{:.0}]  Taylor advection {:?} m/s  mean_offset {:?}  turbulence_scale {}",
         field_dir.display(),
         base_grid.shape(),
         min_c[0], max_c[0], min_c[1], max_c[1], min_c[2], max_c[2],
         cfg.wind_field.taylor_advection_ms,
+        cfg.wind_field.mean_offset_ms,
+        cfg.wind_field.turbulence_scale,
     );
     let wind = AdvectedField {
         inner: base_grid,
