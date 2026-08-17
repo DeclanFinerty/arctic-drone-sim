@@ -1,0 +1,55 @@
+# Formation flight: 1 leader tracing a figure-8, 4 followers at N/S/E/W
+# offsets in the world frame (no leader-heading rotation).
+
+seed = 42
+
+[wind_field]
+load_from = "output/wind_fields/mann_anisotropic"
+taylor_advection_ms = [6.4, 0.0, 0.0]
+
+[drone]
+mass_kg = 1.5
+max_thrust_n = 30.0
+max_wind_speed_ms = 15.0
+max_speed_ms = 20.0
+battery_capacity_wh = 100.0
+drag_area_m2 = 0.05
+drag_coefficient = 1.0
+air_density_kgm3 = 1.29
+power_per_thrust_w_per_n = 6.7
+
+[controller]
+# Shared gains for leader (PID) and followers (FollowLeader). ki=0 for the
+# leader because the target is a moving course — the integral term would
+# accumulate on the sinusoidal tracking error.
+kp = 10.0
+kv = 6.0
+ki = 0.0
+max_horiz_speed_ms = 16.0
+
+[formation.leader]
+type = "figure8"
+center_m = [640.0, 640.0, 30.0]
+amplitude_x_m = 200.0
+amplitude_y_m = 100.0
+period_s = 90.0
+
+[[formation.followers]]
+name = "N"
+offset_m = [0.0, 30.0, 0.0]
+
+[[formation.followers]]
+name = "S"
+offset_m = [0.0, -30.0, 0.0]
+
+[[formation.followers]]
+name = "E"
+offset_m = [30.0, 0.0, 0.0]
+
+[[formation.followers]]
+name = "W"
+offset_m = [-30.0, 0.0, 0.0]
+
+[simulation]
+duration_s = 180.0
+dt_s = 0.01

@@ -40,13 +40,35 @@ def load_slice(z_target_m: float):
     }
 
 
+FORMATION_COLORS = {
+    "leader": "#d62728",
+    "N": "#1f6feb", "S": "#2ca02c", "E": "#9467bd", "W": "#ff7f0e",
+}
+
+
 def load_run(run_name: str):
+    """Return a list of drone traces. Single-drone runs return a 1-element list
+    with name 'drone'; formation runs return one entry per subdirectory."""
     run_dir = REPO / "output" / "runs" / run_name
-    return {
+    subdirs = sorted(d for d in run_dir.iterdir() if d.is_dir())
+    if subdirs:
+        # Put 'leader' first if present.
+        subdirs.sort(key=lambda p: (p.name != "leader", p.name))
+        drones = []
+        for d in subdirs:
+            drones.append({
+                "name": d.name,
+                "times": np.load(d / "times.npy"),
+                "positions": np.load(d / "positions.npy"),
+                "meta": json.loads((d / "metadata.json").read_text()),
+            })
+        return drones
+    return [{
+        "name": "drone",
         "times": np.load(run_dir / "times.npy"),
         "positions": np.load(run_dir / "positions.npy"),
         "meta": json.loads((run_dir / "metadata.json").read_text()),
-    }
+    }]
 
 
 def load_advection_ms():
@@ -89,7 +111,7 @@ def main():
 
     ws = load_slice(args.z)
     adv_ms = load_advection_ms()
-    run = load_run(args.run) if args.run else None
+    drones = load_run(args.run) if args.run else None
 
     n_frames = int(args.fps * args.seconds / args.speedup)
     t_of_frame = np.linspace(0.0, args.seconds, n_frames)
@@ -109,23 +131,25 @@ def main():
     quiv = ax.quiver(xs, ys, ws["u0"][::step, ::step], ws["v0"][::step, ::step],
                      color="#222", alpha=0.55, scale=200, width=0.002)
 
-    drone_dot = None
-    trail_line = None
-    target_marker = None
-    if run is not None:
-        target = np.array(run["meta"]["target_m"])
-        target_marker = ax.scatter([target[0]], [target[1]], color="#ffcc00",
-                                    s=140, marker="*", edgecolor="black", zorder=6,
-                                    label="Target")
-        drone_dot, = ax.plot([], [], "o", color="#d62728", markersize=9,
-                             markeredgecolor="black", zorder=7, label="Drone")
-        trail_line, = ax.plot([], [], "-", color="#d62728", linewidth=1.3,
-                              alpha=0.7, zorder=6)
-        ax.legend(loc="upper right")
+    drone_artists = []  # per-drone (dot, trail)
+    if drones is not None:
+        for d in drones:
+            color = FORMATION_COLORS.get(d["name"], "#d62728")
+            lw = 1.6 if d["name"] == "leader" else 1.1
+            ms = 10 if d["name"] == "leader" else 8
+            trail, = ax.plot([], [], "-", color=color, linewidth=lw,
+                             alpha=0.75, zorder=6)
+            dot, = ax.plot([], [], "o", color=color, markersize=ms,
+                           markeredgecolor="black", zorder=7, label=d["name"])
+            drone_artists.append((dot, trail, d))
+        ax.legend(loc="upper right", fontsize=8)
 
     if args.zoom is not None:
-        if run is not None:
-            cx, cy = float(target[0]), float(target[1])
+        if drones is not None:
+            all_x = np.concatenate([d["positions"][:, 0] for d in drones])
+            all_y = np.concatenate([d["positions"][:, 1] for d in drones])
+            cx = 0.5 * (all_x.min() + all_x.max())
+            cy = 0.5 * (all_y.min() + all_y.max())
         else:
             cx = 0.5 * (ws["x"][0] + ws["x"][-1])
             cy = 0.5 * (ws["y"][0] + ws["y"][-1])
@@ -145,14 +169,14 @@ def main():
         title.set_text(f"z = {ws['z_used_m']:.0f} m,   t = {t:5.2f} s   "
                        f"(mean advection {adv_ms[0]:.1f}, {adv_ms[1]:.1f} m/s)")
         artists = [im, quiv, title]
-        if run is not None:
-            idx = np.searchsorted(run["times"], t)
-            idx = min(idx, len(run["times"]) - 1)
-            px = run["positions"][:idx + 1, 0]
-            py = run["positions"][:idx + 1, 1]
-            drone_dot.set_data([px[-1]], [py[-1]])
-            trail_line.set_data(px, py)
-            artists += [drone_dot, trail_line]
+        for dot, trail, d in drone_artists:
+            idx = np.searchsorted(d["times"], t)
+            idx = min(idx, len(d["times"]) - 1)
+            px = d["positions"][:idx + 1, 0]
+            py = d["positions"][:idx + 1, 1]
+            dot.set_data([px[-1]], [py[-1]])
+            trail.set_data(px, py)
+            artists += [dot, trail]
         return artists
 
     ani = FuncAnimation(fig, update, frames=n_frames, interval=1000 / args.fps,

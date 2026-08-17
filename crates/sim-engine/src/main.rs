@@ -7,9 +7,9 @@ use serde::Deserialize;
 
 use drone::dynamics::PointMassQuad;
 use drone::DroneState;
-use scenario::controller::PidStationKeep;
-use scenario::mission::{PointToPoint, StationKeep};
-use scenario::Mission;
+use scenario::controller::{FollowLeader, PidStationKeep};
+use scenario::mission::{CourseKind, FollowCourse, PointToPoint, StationKeep, TimeoutMission};
+use scenario::{Controller, Mission};
 use sim_engine::output::{RunMetadata, save_run};
 use wind_field::grid::AdvectedField;
 use wind_field::io::load_grid;
@@ -35,8 +35,51 @@ struct Config {
     wind_field: WindFieldConfig,
     drone: DroneConfig,
     controller: ControllerConfig,
-    mission: MissionConfig,
+    #[serde(default)]
+    mission: Option<MissionConfig>,
+    #[serde(default)]
+    formation: Option<FormationConfig>,
     simulation: SimulationConfig,
+}
+
+#[derive(Debug, Deserialize)]
+struct FormationConfig {
+    leader: LeaderCourseConfig,
+    #[serde(default)]
+    followers: Vec<FollowerConfig>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+enum LeaderCourseConfig {
+    Figure8 {
+        center_m: [f64; 3],
+        amplitude_x_m: f64,
+        amplitude_y_m: f64,
+        period_s: f64,
+    },
+    Circle {
+        center_m: [f64; 3],
+        radius_m: f64,
+        period_s: f64,
+    },
+}
+
+impl LeaderCourseConfig {
+    fn to_course(&self) -> CourseKind {
+        match *self {
+            Self::Figure8 { center_m, amplitude_x_m, amplitude_y_m, period_s } =>
+                CourseKind::Figure8 { center_m, amplitude_x_m, amplitude_y_m, period_s },
+            Self::Circle { center_m, radius_m, period_s } =>
+                CourseKind::Circle { center_m, radius_m, period_s },
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct FollowerConfig {
+    name: String,
+    offset_m: [f64; 3],
 }
 
 #[derive(Debug, Deserialize)]
@@ -185,14 +228,40 @@ fn main() -> Result<()> {
         gravity_ms2: 9.81,
     };
 
-    let mission: Box<dyn Mission> = match &cfg.mission {
+    let output_dir = cli
+        .output
+        .or_else(|| cfg.simulation.output_dir.as_ref().map(PathBuf::from))
+        .unwrap_or_else(|| PathBuf::from("output").join("runs").join(&cli.run_name));
+
+    if let Some(formation) = &cfg.formation {
+        run_formation(&cfg, formation, &wind, &drone_model, &output_dir)?;
+    } else {
+        let mission_cfg = cfg.mission.as_ref()
+            .context("config has neither [mission] nor [formation]")?;
+        run_single(&cfg, mission_cfg, &wind, &drone_model, &output_dir)?;
+    }
+    tracing::info!("wrote {}", output_dir.display());
+    Ok(())
+}
+
+fn run_single<W>(
+    cfg: &Config,
+    mission_cfg: &MissionConfig,
+    wind: &W,
+    drone_model: &PointMassQuad,
+    output_dir: &PathBuf,
+) -> Result<()>
+where
+    W: WindFieldQuery + ?Sized,
+{
+    let mission: Box<dyn Mission> = match mission_cfg {
         MissionConfig::StationKeep { target_m, tolerance_m, .. } => Box::new(StationKeep {
             target_m: *target_m,
             tolerance_m: *tolerance_m,
             duration_s: cfg.simulation.duration_s,
         }),
         MissionConfig::PointToPoint { start_m: _, goal_m, tolerance_m } => Box::new(PointToPoint {
-            start_m: cfg.mission.initial_position(),
+            start_m: mission_cfg.initial_position(),
             goal_m: *goal_m,
             tolerance_m: *tolerance_m,
             timeout_s: cfg.simulation.duration_s,
@@ -209,29 +278,19 @@ fn main() -> Result<()> {
         controller = controller.with_max_horiz_speed(v);
     }
 
-    let start = cfg.mission.initial_position();
+    let start = mission_cfg.initial_position();
     let initial = DroneState::at_rest(start, cfg.drone.battery_capacity_wh);
 
     let result = sim_engine::run(
-        &wind,
-        &drone_model,
-        mission.as_ref(),
-        &mut controller,
-        initial,
-        cfg.simulation.dt_s,
-        cfg.simulation.duration_s,
+        wind, drone_model, mission.as_ref(), &mut controller, initial,
+        cfg.simulation.dt_s, cfg.simulation.duration_s,
     );
 
     let mean_wind_ms = mean_wind_magnitude(&result);
     tracing::info!(
-        "simulation done: steps={}, score(rms error)={:.3} m, terminated={}, mean|wind|={:.3} m/s",
+        "simulation done: steps={}, score={:.3} m, terminated={}, mean|wind|={:.3} m/s",
         result.steps_run, result.score, result.terminated_reason, mean_wind_ms
     );
-
-    let output_dir = cli
-        .output
-        .or_else(|| cfg.simulation.output_dir.as_ref().map(PathBuf::from))
-        .unwrap_or_else(|| PathBuf::from("output").join("runs").join(&cli.run_name));
 
     let meta = RunMetadata {
         steps_run: result.steps_run,
@@ -239,16 +298,123 @@ fn main() -> Result<()> {
         duration_s: cfg.simulation.duration_s,
         score: result.score,
         terminated_reason: result.terminated_reason.to_string(),
-        target_m: cfg.mission.target(),
-        tolerance_m: cfg.mission.tolerance(),
+        target_m: mission_cfg.target(),
+        tolerance_m: mission_cfg.tolerance(),
         mean_wind_ms,
         notes: Some(format!(
             "wind={}, seed={:?}, kp={}, kv={}, ki={}",
             cfg.wind_field.load_from, cfg.seed, cfg.controller.kp, cfg.controller.kv, cfg.controller.ki
         )),
     };
-    save_run(&result, &output_dir, &meta)?;
-    tracing::info!("wrote {}", output_dir.display());
+    save_run(&result, output_dir, &meta)?;
+    Ok(())
+}
+
+fn run_formation<W>(
+    cfg: &Config,
+    formation: &FormationConfig,
+    wind: &W,
+    drone_model: &PointMassQuad,
+    output_dir: &PathBuf,
+) -> Result<()>
+where
+    W: WindFieldQuery + ?Sized,
+{
+    let course = formation.leader.to_course();
+    let leader_start = course.position_at(0.0);
+    tracing::info!(
+        "formation: 1 leader + {} followers, duration {} s, leader starts at {:?}",
+        formation.followers.len(), cfg.simulation.duration_s, leader_start,
+    );
+
+    // Build missions. Leader has FollowCourse; followers have TimeoutMission.
+    let leader_mission = FollowCourse {
+        course: course.clone(),
+        duration_s: cfg.simulation.duration_s,
+    };
+    let follower_mission = TimeoutMission { duration_s: cfg.simulation.duration_s };
+
+    // Collect boxed missions into a Vec so we can take stable refs to them.
+    let mut missions_boxed: Vec<Box<dyn Mission>> = Vec::new();
+    missions_boxed.push(Box::new(leader_mission));
+    for _ in 0..formation.followers.len() {
+        missions_boxed.push(Box::new(follower_mission.clone()));
+    }
+    let missions_refs: Vec<&dyn Mission> = missions_boxed.iter().map(|m| m.as_ref()).collect();
+
+    // Controllers: leader uses PidStationKeep (targets the moving course
+    // position via mission.target(t)); followers use FollowLeader.
+    let mut controllers: Vec<Box<dyn Controller>> = Vec::new();
+    let mut leader_ctrl = PidStationKeep::new(
+        cfg.controller.kp, cfg.controller.kv, cfg.controller.ki, cfg.drone.mass_kg,
+    );
+    if let Some(v) = cfg.controller.max_horiz_speed_ms {
+        leader_ctrl = leader_ctrl.with_max_horiz_speed(v);
+    }
+    controllers.push(Box::new(leader_ctrl));
+    for (i, f) in formation.followers.iter().enumerate() {
+        let leader_idx = 0;
+        let mut ctrl = FollowLeader::new(
+            leader_idx, f.offset_m,
+            cfg.controller.kp, cfg.controller.kv, cfg.drone.mass_kg,
+        );
+        if let Some(v) = cfg.controller.max_horiz_speed_ms {
+            ctrl = ctrl.with_max_horiz_speed(v);
+        }
+        controllers.push(Box::new(ctrl));
+        let _ = i;
+    }
+
+    // Initial states: leader at course(0), followers at leader(0) + offset.
+    let mut initials = Vec::with_capacity(1 + formation.followers.len());
+    initials.push(DroneState::at_rest(leader_start, cfg.drone.battery_capacity_wh));
+    for f in &formation.followers {
+        let p = [
+            leader_start[0] + f.offset_m[0],
+            leader_start[1] + f.offset_m[1],
+            leader_start[2] + f.offset_m[2],
+        ];
+        initials.push(DroneState::at_rest(p, cfg.drone.battery_capacity_wh));
+    }
+
+    let drone_models: Vec<&PointMassQuad> = std::iter::repeat(drone_model)
+        .take(1 + formation.followers.len())
+        .collect();
+
+    let results = sim_engine::run_multi(
+        wind, &drone_models, &missions_refs, &mut controllers, initials,
+        cfg.simulation.dt_s, cfg.simulation.duration_s,
+    );
+
+    // Write per-drone outputs under <output_dir>/<name>/.
+    let names: Vec<String> = std::iter::once("leader".to_string())
+        .chain(formation.followers.iter().map(|f| f.name.clone()))
+        .collect();
+    for (i, result) in results.iter().enumerate() {
+        let mean_wind_ms = mean_wind_magnitude(result);
+        tracing::info!(
+            "  {:>8}: steps={}, score={:.3} m, mean|wind|={:.3} m/s",
+            names[i], result.steps_run, result.score, mean_wind_ms,
+        );
+        let per_dir = output_dir.join(&names[i]);
+        let target_at_start = missions_refs[i].target(0.0).unwrap_or([0.0; 3]);
+        let meta = RunMetadata {
+            steps_run: result.steps_run,
+            dt_s: cfg.simulation.dt_s,
+            duration_s: cfg.simulation.duration_s,
+            score: result.score,
+            terminated_reason: result.terminated_reason.to_string(),
+            target_m: target_at_start,
+            tolerance_m: 0.0,
+            mean_wind_ms,
+            notes: Some(format!(
+                "formation/{}, wind={}, seed={:?}",
+                names[i], cfg.wind_field.load_from, cfg.seed,
+            )),
+        };
+        save_run(result, &per_dir, &meta)?;
+    }
+
     Ok(())
 }
 

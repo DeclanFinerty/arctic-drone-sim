@@ -12,14 +12,19 @@ pub trait Mission {
     fn target(&self, time: f64) -> Option<[f64; 3]>;
 }
 
-/// A controller produces control inputs from state, mission context, local
-/// wind, and the timestep it is being asked to integrate over.
+/// A controller produces control inputs from the drone's own state, the
+/// broader multi-drone state (empty slice for single-drone runs), mission
+/// context, local wind, current sim time, and the timestep it is being
+/// asked to integrate over. `time_s` is passed so time-varying missions can
+/// be sampled at the right instant.
 pub trait Controller {
     fn compute_control(
         &mut self,
         state: &DroneState,
+        all_states: &[DroneState],
         mission: &dyn Mission,
         wind: [f64; 3],
+        time_s: f64,
         dt_s: f64,
     ) -> ControlInput;
 }
