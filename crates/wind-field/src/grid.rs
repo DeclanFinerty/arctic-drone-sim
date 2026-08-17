@@ -134,6 +134,31 @@ fn trilinear(arr: &Array3<f64>, fx: (usize, f64), fy: (usize, f64), fz: (usize, 
     c0 * (1.0 - tz) + c1 * tz
 }
 
+/// Taylor's frozen-turbulence wrapper: exposes a static field as if it were
+/// advecting past the query point at a constant `mean_flow_ms`. Common
+/// approximation for atmospheric turbulence at scales small compared to the
+/// eddy lifetime (usually valid for drone dynamics).
+#[derive(Debug, Clone)]
+pub struct AdvectedField<F> {
+    pub inner: F,
+    pub mean_flow_ms: [f64; 3],
+}
+
+impl<F: WindFieldQuery> WindFieldQuery for AdvectedField<F> {
+    fn wind_at(&self, position: [f64; 3], time: f64) -> [f64; 3] {
+        let advected = [
+            position[0] - self.mean_flow_ms[0] * time,
+            position[1] - self.mean_flow_ms[1] * time,
+            position[2] - self.mean_flow_ms[2] * time,
+        ];
+        self.inner.wind_at(advected, 0.0)
+    }
+
+    fn domain_bounds(&self) -> ([f64; 3], [f64; 3]) {
+        self.inner.domain_bounds()
+    }
+}
+
 /// JSON-serializable metadata sidecar written next to the .npy arrays.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GridMetadata {

@@ -3,35 +3,49 @@
 seed = 42
 
 [wind_field]
-# Physical domain size in meters (x, y, z).
-domain = [2000.0, 2000.0, 200.0]
-# Grid resolution (nx, ny, nz).
+# Directory holding u/v/w .npy + metadata.json from a wind-field example.
+load_from = "output/wind_fields/mann_anisotropic"
+# Physical domain size in meters (x, y, z); descriptive only when loading from disk.
+domain = [1280.0, 1280.0, 320.0]
 grid = [128, 128, 32]
-# Mean wind speed [m/s] at reference height, from REA Point 2024 observations.
 mean_speed_ms = 5.715
 reference_height_m = 10.0
-# Log-law surface roughness [m]: flat Arctic snow/ice.
 z0_m = 0.001
-# Target hub altitude used to derive Mann parameters.
 hub_height_m = 30.0
 
 [wind_field.mann]
-# Anisotropic Mann model parameters, calibrated for the anisotropic RDT
-# generator on a 128x128x32 grid at 10 m spacing. Target: sigma_u = 1.25 m/s
-# (IEC NTM class C at V_hub = 6.40 m/s, from REA Point 2024 climatology).
-#
-# Measured on target grid at these values:
-#   sigma_u = 1.248 m/s   (target 1.25)
-#   sigma_v/sigma_u = 0.69   (published Mann at Gamma=3.9 gives ~0.7)
-#   sigma_w/sigma_u = 0.47   (published Mann at Gamma=3.9 gives ~0.5)
-#
-# Isotropic generator uses a different alpha (0.585) at the same grid; the
-# anisotropic RDT concentrates ~1.5x more energy in u for the same alpha, so
-# anisotropic alpha is proportionally smaller. Recalibrate whenever the grid
-# resolution or physical domain changes.
+# See PHASE1.md for how these were derived and calibrated.
 alpha_epsilon_23 = 0.163
 length_scale_m = 16.800
 gamma = 3.9
+
+[drone]
+# Small commercial-class quadrotor.
+mass_kg = 1.5
+max_thrust_n = 30.0
+max_wind_speed_ms = 15.0
+max_speed_ms = 20.0
+battery_capacity_wh = 100.0
+drag_area_m2 = 0.05
+drag_coefficient = 1.0
+# Arctic ~0 C sea level.
+air_density_kgm3 = 1.29
+# Linear battery-drain approximation; ~100 W at 15 N hover thrust.
+power_per_thrust_w_per_n = 6.7
+
+[controller]
+# PID-with-velocity-feedback gains tuned for the 1.5 kg quad above.
+# Natural frequency sqrt(kp/m) ~= 2.6 rad/s, damping ratio ~= 0.77.
+kp = 10.0
+kv = 6.0
+ki = 0.5
+
+[mission]
+# Hover at mid-domain, drone-operational altitude.
+target_m = [640.0, 640.0, 30.0]
+tolerance_m = 1.0
+# Start 10 m upwind and 8 m lateral so the controller has to converge.
+initial_position_m = [630.0, 632.0, 30.0]
 
 [simulation]
 duration_s = 60.0

@@ -1,5 +1,4 @@
 pub mod analytical;
-pub mod fitting;
 pub mod grid;
 pub mod io;
 pub mod mann;

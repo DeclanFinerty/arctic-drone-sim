@@ -12,12 +12,14 @@ pub trait Mission {
     fn target(&self, time: f64) -> Option<[f64; 3]>;
 }
 
-/// A controller produces control inputs from state, mission context, and local wind.
+/// A controller produces control inputs from state, mission context, local
+/// wind, and the timestep it is being asked to integrate over.
 pub trait Controller {
     fn compute_control(
         &mut self,
         state: &DroneState,
         mission: &dyn Mission,
         wind: [f64; 3],
+        dt_s: f64,
     ) -> ControlInput;
 }
