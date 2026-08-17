@@ -26,6 +26,11 @@ pub struct PidStationKeep {
     pub integral_m_s: [f64; 3],
     /// Anti-windup clamp on the integral term (m*s).
     pub integral_clamp_m_s: f64,
+    /// Optional cruise-speed cap. When set, horizontal position error is
+    /// clamped so the steady-state balance `kp*err == kv*v` gives cruise
+    /// speed at the cap. Prevents the drone from ballistically accelerating
+    /// past its rated speed on long point-to-point legs.
+    pub max_horiz_speed_ms: Option<f64>,
 }
 
 impl PidStationKeep {
@@ -38,7 +43,13 @@ impl PidStationKeep {
             gravity_ms2: 9.81,
             integral_m_s: [0.0; 3],
             integral_clamp_m_s: 50.0,
+            max_horiz_speed_ms: None,
         }
+    }
+
+    pub fn with_max_horiz_speed(mut self, v_ms: f64) -> Self {
+        self.max_horiz_speed_ms = Some(v_ms);
+        self
     }
 }
 
@@ -51,11 +62,23 @@ impl Controller for PidStationKeep {
         dt_s: f64,
     ) -> ControlInput {
         let target = mission.target(0.0).unwrap_or([0.0; 3]);
-        let error = [
+        let mut error = [
             target[0] - state.position[0],
             target[1] - state.position[1],
             target[2] - state.position[2],
         ];
+
+        // Horizontal-error clamp: caps kp*|err_h| at kv*v_cruise so steady-state
+        // cruise speed is bounded. Vertical error is left alone.
+        if let Some(v_cruise) = self.max_horiz_speed_ms {
+            let horiz_mag = (error[0].powi(2) + error[1].powi(2)).sqrt();
+            let max_horiz = self.kv * v_cruise / self.kp;
+            if horiz_mag > max_horiz {
+                let s = max_horiz / horiz_mag;
+                error[0] *= s;
+                error[1] *= s;
+            }
+        }
 
         for i in 0..3 {
             self.integral_m_s[i] += error[i] * dt_s;

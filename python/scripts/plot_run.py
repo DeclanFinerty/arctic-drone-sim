@@ -153,7 +153,7 @@ def plot_time_series(run) -> None:
     rate = drained / t[-1] * 3600 if t[-1] > 0 else 0.0
     axes[3].set_title(f"Battery drain: {drained:.3f} Wh over {t[-1]:.0f} s  ({rate:.1f} W avg)")
 
-    fig.suptitle(f"Station-keep run — mean|wind| = {run['meta']['mean_wind_ms']:.2f} m/s",
+    fig.suptitle(f"Run '{RUN.name}' — mean|wind| = {run['meta']['mean_wind_ms']:.2f} m/s",
                  fontsize=12)
     fig.tight_layout(rect=(0, 0, 1, 0.96))
     fig.savefig(PLOTS / "time_series.png", dpi=150)

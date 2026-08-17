@@ -1,14 +1,39 @@
-# PointToPoint: fly from start to goal.
+# PointToPoint: fly ~1 km across the wind field. Long enough for turbulent
+# gusts to actually deflect the drone and for the trajectory to look weathered.
+
+seed = 42
+
+[wind_field]
+load_from = "output/wind_fields/mann_anisotropic"
+# Mean flow +x at ~mean observed wind speed; puts the drone on a crossing leg.
+taylor_advection_ms = [6.4, 0.0, 0.0]
+
+[drone]
+mass_kg = 1.5
+max_thrust_n = 30.0
+max_wind_speed_ms = 15.0
+max_speed_ms = 20.0
+battery_capacity_wh = 100.0
+drag_area_m2 = 0.05
+drag_coefficient = 1.0
+air_density_kgm3 = 1.29
+power_per_thrust_w_per_n = 6.7
+
+[controller]
+kp = 10.0
+kv = 6.0
+ki = 0.5
+# Cap cruise so the drone doesn't ballistically accelerate to drag-equilibrium.
+max_horiz_speed_ms = 10.0
 
 [mission]
 type = "point_to_point"
-start_m = [0.0, 0.0, 30.0]
-goal_m = [500.0, 0.0, 30.0]
-tolerance_m = 2.0
-timeout_s = 300.0
+# Cross the domain in the +y direction (roughly perpendicular to mean wind)
+# so the drone flies through the streamwise-elongated turbulent structures.
+start_m = [640.0, 200.0, 30.0]
+goal_m = [640.0, 1080.0, 30.0]
+tolerance_m = 3.0
 
-[controller]
-type = "pid"
-kp = [1.0, 1.0, 1.5]
-ki = [0.0, 0.0, 0.1]
-kd = [0.5, 0.5, 0.5]
+[simulation]
+duration_s = 180.0
+dt_s = 0.01

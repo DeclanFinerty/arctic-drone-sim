@@ -8,7 +8,8 @@ use serde::Deserialize;
 use drone::dynamics::PointMassQuad;
 use drone::DroneState;
 use scenario::controller::PidStationKeep;
-use scenario::mission::StationKeep;
+use scenario::mission::{PointToPoint, StationKeep};
+use scenario::Mission;
 use sim_engine::output::{RunMetadata, save_run};
 use wind_field::grid::AdvectedField;
 use wind_field::io::load_grid;
@@ -74,13 +75,48 @@ struct ControllerConfig {
     kp: f64,
     kv: f64,
     ki: f64,
+    /// Optional horizontal cruise-speed cap. When set the PID clamps position
+    /// error so long point-to-point legs cruise at this speed instead of
+    /// accelerating to the drag-equilibrium ballistic speed.
+    #[serde(default)]
+    max_horiz_speed_ms: Option<f64>,
 }
 
 #[derive(Debug, Deserialize)]
-struct MissionConfig {
-    target_m: [f64; 3],
-    tolerance_m: f64,
-    initial_position_m: Option<[f64; 3]>,
+#[serde(tag = "type", rename_all = "snake_case")]
+enum MissionConfig {
+    StationKeep {
+        target_m: [f64; 3],
+        tolerance_m: f64,
+        initial_position_m: Option<[f64; 3]>,
+    },
+    PointToPoint {
+        start_m: [f64; 3],
+        goal_m: [f64; 3],
+        tolerance_m: f64,
+    },
+}
+
+impl MissionConfig {
+    fn initial_position(&self) -> [f64; 3] {
+        match self {
+            Self::StationKeep { target_m, initial_position_m, .. } => {
+                initial_position_m.unwrap_or(*target_m)
+            }
+            Self::PointToPoint { start_m, .. } => *start_m,
+        }
+    }
+    fn target(&self) -> [f64; 3] {
+        match self {
+            Self::StationKeep { target_m, .. } => *target_m,
+            Self::PointToPoint { goal_m, .. } => *goal_m,
+        }
+    }
+    fn tolerance(&self) -> f64 {
+        match self {
+            Self::StationKeep { tolerance_m, .. } | Self::PointToPoint { tolerance_m, .. } => *tolerance_m,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -133,10 +169,18 @@ fn main() -> Result<()> {
         gravity_ms2: 9.81,
     };
 
-    let mission = StationKeep {
-        target_m: cfg.mission.target_m,
-        tolerance_m: cfg.mission.tolerance_m,
-        duration_s: cfg.simulation.duration_s,
+    let mission: Box<dyn Mission> = match &cfg.mission {
+        MissionConfig::StationKeep { target_m, tolerance_m, .. } => Box::new(StationKeep {
+            target_m: *target_m,
+            tolerance_m: *tolerance_m,
+            duration_s: cfg.simulation.duration_s,
+        }),
+        MissionConfig::PointToPoint { start_m: _, goal_m, tolerance_m } => Box::new(PointToPoint {
+            start_m: cfg.mission.initial_position(),
+            goal_m: *goal_m,
+            tolerance_m: *tolerance_m,
+            timeout_s: cfg.simulation.duration_s,
+        }),
     };
 
     let mut controller = PidStationKeep::new(
@@ -145,17 +189,17 @@ fn main() -> Result<()> {
         cfg.controller.ki,
         cfg.drone.mass_kg,
     );
+    if let Some(v) = cfg.controller.max_horiz_speed_ms {
+        controller = controller.with_max_horiz_speed(v);
+    }
 
-    let start = cfg
-        .mission
-        .initial_position_m
-        .unwrap_or(cfg.mission.target_m);
+    let start = cfg.mission.initial_position();
     let initial = DroneState::at_rest(start, cfg.drone.battery_capacity_wh);
 
     let result = sim_engine::run(
         &wind,
         &drone_model,
-        &mission,
+        mission.as_ref(),
         &mut controller,
         initial,
         cfg.simulation.dt_s,
@@ -179,8 +223,8 @@ fn main() -> Result<()> {
         duration_s: cfg.simulation.duration_s,
         score: result.score,
         terminated_reason: result.terminated_reason.to_string(),
-        target_m: cfg.mission.target_m,
-        tolerance_m: cfg.mission.tolerance_m,
+        target_m: cfg.mission.target(),
+        tolerance_m: cfg.mission.tolerance(),
         mean_wind_ms,
         notes: Some(format!(
             "wind={}, seed={:?}, kp={}, kv={}, ki={}",

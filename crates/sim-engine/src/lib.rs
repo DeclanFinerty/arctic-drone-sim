@@ -19,10 +19,10 @@ pub struct SimulationResult {
 
 /// Advance the simulation until the mission reports complete, the drone's
 /// battery drains, or `max_duration_s` is reached — whichever comes first.
-pub fn run<W, D, M, C>(
+pub fn run<W, D, C>(
     wind: &W,
     drone_model: &D,
-    mission: &M,
+    mission: &dyn Mission,
     controller: &mut C,
     initial: DroneState,
     dt_s: f64,
@@ -31,7 +31,6 @@ pub fn run<W, D, M, C>(
 where
     W: WindFieldQuery + ?Sized,
     D: DroneDynamics + ?Sized,
-    M: Mission,
     C: Controller + ?Sized,
 {
     let capacity = (max_duration_s / dt_s).ceil() as usize + 1;

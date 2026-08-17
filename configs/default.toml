@@ -41,6 +41,7 @@ kv = 6.0
 ki = 0.5
 
 [mission]
+type = "station_keep"
 # Hover at mid-domain, drone-operational altitude.
 target_m = [640.0, 640.0, 30.0]
 tolerance_m = 1.0
