@@ -20,9 +20,13 @@ hub_height_m = 30.0
 # python/scripts/derive_mann_params.py from REA Point 2024 climatology
 # (V_hub = 6.40 m/s at z = 30 m, sigma_u_target = 1.25 m/s, TI = 19.5%).
 #
-# alpha_epsilon_23 is an initial estimate — refine after running the Mann
-# model and measuring output sigma_u: A_new = A_old * (sigma_target/sigma_out)^2.
-alpha_epsilon_23 = 0.0742
+# alpha_epsilon_23 was empirically calibrated by running the isotropic Mann
+# generator on a 128x128x32 grid at 10 m spacing and rescaling until the
+# measured sigma_u matched the IEC target. Initial IEC-formula estimate was
+# 0.0742; calibrated value 0.585 accounts for the (2/3)-of-TKE-per-component
+# projection and finite-grid high-k truncation. Rescale again if the grid
+# resolution or physical domain changes materially.
+alpha_epsilon_23 = 0.585
 length_scale_m = 16.800
 gamma = 3.9
 
