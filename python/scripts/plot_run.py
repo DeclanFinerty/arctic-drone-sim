@@ -119,22 +119,30 @@ def plot_time_series(run) -> None:
     axes[0].grid(alpha=0.3)
     axes[0].set_title(f"RMS error = {run['meta']['score']:.3f} m,   tolerance = {run['meta']['tolerance_m']} m")
 
-    # Commanded force magnitude (only 1 shorter than states — pad or trim).
-    t_ctrl = t[1:1 + len(force_mag)]
-    axes[1].plot(t_ctrl, force_mag, color="#1f6feb", linewidth=0.7, label="|commanded force|")
-    hover_n = run["meta"].get("hover_thrust_n")  # not always in metadata
-    axes[1].axhline(1.5 * 9.81, color="#888", linewidth=0.6, linestyle="--",
-                    label="hover thrust (m·g)")
+    # Split force into horizontal (fx, fy) and vertical (fz - hover) so
+    # turbulence response is visible instead of drowned by the ~mg z-thrust.
+    force = run["commanded_force"]
+    t_ctrl = t[1:1 + len(force)]
+    hover_n = 1.5 * 9.81
+    axes[1].plot(t_ctrl, force[:, 0], label="fx", color="#1f6feb", linewidth=0.7)
+    axes[1].plot(t_ctrl, force[:, 1], label="fy", color="#2ca02c", linewidth=0.7)
+    axes[1].plot(t_ctrl, force[:, 2] - hover_n, label=f"fz − mg", color="#d62728", linewidth=0.7)
+    axes[1].axhline(0, color="gray", linewidth=0.4)
     axes[1].set_ylabel("Force [N]")
-    axes[1].legend(loc="upper right", fontsize=8)
+    axes[1].legend(loc="upper right", fontsize=8, ncol=3)
     axes[1].grid(alpha=0.3)
+    axes[1].set_title("Commanded force components (hover thrust subtracted from fz)")
 
-    t_wind = t[1:1 + len(wind_mag)]
-    axes[2].plot(t_wind, wind_mag, color="#8b4513", linewidth=0.7, label="|wind at drone|")
-    axes[2].axhline(np.mean(wind_mag), color="#d62728", linewidth=0.6, linestyle="--",
-                    label=f"mean = {np.mean(wind_mag):.2f} m/s")
-    axes[2].set_ylabel("Wind speed [m/s]")
-    axes[2].legend(loc="upper right", fontsize=8)
+    # Wind vector components at the drone — shows the turbulent variation
+    # the controller has to react to.
+    wind = run["wind_at_drone"]
+    t_wind = t[1:1 + len(wind)]
+    axes[2].plot(t_wind, wind[:, 0], label="u (streamwise)", color="#1f6feb", linewidth=0.7)
+    axes[2].plot(t_wind, wind[:, 1], label="v (lateral)", color="#2ca02c", linewidth=0.7)
+    axes[2].plot(t_wind, wind[:, 2], label="w (vertical)", color="#d62728", linewidth=0.7)
+    axes[2].plot(t_wind, wind_mag, label="|wind|", color="black", linewidth=0.8, linestyle="--")
+    axes[2].set_ylabel("Wind [m/s]")
+    axes[2].legend(loc="upper right", fontsize=8, ncol=4)
     axes[2].grid(alpha=0.3)
 
     axes[3].plot(t, run["battery"], color="#2ca02c", linewidth=1.0)
